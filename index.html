@@ -516,6 +516,9 @@
             }
         }
 
+        // Tracks which tab is currently active for back press logic
+        var _currentUserTab = 'sect-home';
+
         function switchUserTab(tabSectionId, element) {
             document.querySelectorAll('.tab-section').forEach(sect => sect.classList.remove('active'));
             document.getElementById(tabSectionId).classList.add('active');
@@ -526,9 +529,39 @@
             element.classList.remove('text-gray-400', 'font-medium', 'opacity-60');
             element.classList.add('text-green-700', 'font-bold', 'opacity-100');
             calculateUserDashboardStats();
-            
+
+            // Push every tab change to history stack so back retraces the exact path
+            window.history.pushState({ userTab: tabSectionId }, '');
+            _currentUserTab = tabSectionId;
+
             let scrNode = document.getElementById("scrollContainerArea");
             if(scrNode) scrNode.scrollTop = 0;
+        }
+
+        // Helper: visually activate a tab by its section id without pushing history
+        function _activateTabVisually(tabSectionId) {
+            var tabButtons = {
+                'sect-home':   0,
+                'sect-latest': 1,
+                'sect-team':   2,
+                'sect-about':  3
+            };
+            document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+            var el = document.getElementById(tabSectionId);
+            if (el) el.classList.add('active');
+            document.querySelectorAll('.user-nav-btn').forEach(btn => {
+                btn.classList.remove('text-green-700', 'font-bold', 'opacity-100');
+                btn.classList.add('text-gray-400', 'font-medium', 'opacity-60');
+            });
+            var idx = tabButtons[tabSectionId];
+            var btns = document.querySelectorAll('.user-nav-btn');
+            if (btns[idx]) {
+                btns[idx].classList.remove('text-gray-400', 'font-medium', 'opacity-60');
+                btns[idx].classList.add('text-green-700', 'font-bold', 'opacity-100');
+            }
+            _currentUserTab = tabSectionId;
+            var scrNode = document.getElementById("scrollContainerArea");
+            if (scrNode) scrNode.scrollTop = 0;
         }
 
         let userActiveHistTab = 'donation';
@@ -648,60 +681,76 @@
         }
 
         window.addEventListener('DOMContentLoaded', () => { loadUser(); });
-    // Android Back Button & Exit Popup Control Logic
-(function() {
-    let backPressCount = 0;
-    
-    // Push a dummy state to history to capture the first back click
-    window.history.pushState({ page: "exit_guard" }, "");
-    
-    window.addEventListener("popstate", function(event) {
-        // If user tries to go back, open the exit popup instead of closing app
-        let modal = document.getElementById("exitPopupModal");
-        if (modal) {
-            modal.classList.remove("hidden");
-            setTimeout(() => {
-                modal.classList.remove("opacity-0");
-                modal.querySelector('div').classList.remove("scale-95");
-            }, 10);
-            
-            // Keep the user on the same page structure till they choose
-            window.history.pushState({ page: "exit_guard" }, "");
-        }
-    });
 
-    window.closeExitPopup = function(shouldExit) {
-        let modal = document.getElementById("exitPopupModal");
-        if (modal) {
-            modal.classList.add("opacity-0");
-            modal.querySelector('div').classList.add("scale-95");
-            setTimeout(() => modal.classList.add("hidden"), 300);
+        // ===== BACK BUTTON + EXIT POPUP SYSTEM =====
+        // Base state on page load
+        window.history.replaceState({ userTab: 'sect-home' }, '');
+
+        window.addEventListener('popstate', function(event) {
+            var targetTab = (event.state && event.state.userTab) ? event.state.userTab : null;
+
+            if (targetTab && targetTab !== 'sect-home') {
+                // History has a tab state — restore that tab visually
+                _activateTabVisually(targetTab);
+            } else if (targetTab === 'sect-home') {
+                // Reached home in history
+                _activateTabVisually('sect-home');
+                // Push a guard state so next back shows popup instead of leaving
+                window.history.pushState({ userTab: '__exit_guard__' }, '');
+            } else {
+                // targetTab is '__exit_guard__' or null — show exit popup
+                _rahmatShowExitPopup();
+                // Push guard again so popup shows on every subsequent back
+                window.history.pushState({ userTab: '__exit_guard__' }, '');
+            }
+        });
+
+        function _rahmatShowExitPopup() {
+            var modal = document.getElementById('rahmatExitModal');
+            if (!modal) return;
+            modal.style.display = 'flex';
+            setTimeout(function() {
+                modal.style.background = 'rgba(0,0,0,0.6)';
+                modal.querySelector('.rahmat-exit-card').style.transform = 'scale(1)';
+                modal.querySelector('.rahmat-exit-card').style.opacity = '1';
+            }, 10);
         }
-        
-        if (shouldExit) {
-            // This triggers native closing behavior inside Android TWA apps
-            navigator.app ? navigator.app.exitApp() : window.close();
+
+        function rahmatCloseExitPopup(shouldExit) {
+            var modal = document.getElementById('rahmatExitModal');
+            if (modal) {
+                modal.style.background = 'rgba(0,0,0,0)';
+                modal.querySelector('.rahmat-exit-card').style.transform = 'scale(0.85)';
+                modal.querySelector('.rahmat-exit-card').style.opacity = '0';
+                setTimeout(function() { modal.style.display = 'none'; }, 280);
+            }
+            if (shouldExit) {
+                try { navigator.app.exitApp(); } catch(e) { window.close(); }
+            }
         }
-    };
-})();
     </script>
-    <!-- Modern Exit Popup Modal -->
-<div id="exitPopupModal" class="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 hidden opacity-0 transition-opacity duration-300">
-    <div class="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-sm p-6 transform scale-95 transition-transform duration-300 border border-gray-100 dark:border-gray-700 text-center">
-        <div class="w-16 h-16 bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 animate-pulse">
-            <i class="fa-solid fa-circle-exclamation"></i>
-        </div>
-        <h3 class="text-lg font-bold text-gray-900 dark:text-gray-100 mb-1">एप्लिकेशन बंद करें?</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mb-6">क्या आप वाकई रहमत-ए-इस्LAM फाउंडेशन ऐप से बाहर निकलना चाहते हैं?</p>
-        <div class="flex gap-3">
-            <button onclick="closeExitPopup(false)" class="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-bold p-3 rounded-xl text-xs active:scale-95 transition-transform">
-                नहीं, रुकें
-            </button>
-            <button onclick="closeExitPopup(true)" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-xl text-xs shadow-md active:scale-95 transition-transform">
-                हाँ, बाहर जाएँ
-            </button>
+
+    <!-- Exit Popup -->
+    <style>
+        #rahmatExitModal { display:none; position:fixed; inset:0; z-index:10000; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,0); transition:background 0.28s ease; }
+        .rahmat-exit-card { background:linear-gradient(135deg,#0b4f2f 0%,#1a6b3f 50%,#0d5c36 100%); border-radius:24px; padding:28px 24px 22px; width:100%; max-width:300px; text-align:center; box-shadow:0 25px 60px rgba(0,0,0,0.5); transform:scale(0.85); opacity:0; transition:transform 0.28s cubic-bezier(0.34,1.56,0.64,1),opacity 0.28s ease; border:1px solid rgba(255,255,255,0.15); }
+        .rahmat-exit-icon { width:56px; height:56px; background:rgba(255,255,255,0.15); border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 14px; font-size:22px; color:#fff; }
+        .rahmat-exit-title { color:#fff; font-size:17px; font-weight:700; margin-bottom:6px; }
+        .rahmat-exit-sub { color:rgba(255,255,255,0.65); font-size:11px; margin-bottom:20px; }
+        .rahmat-exit-btns { display:flex; gap:10px; }
+        .rahmat-btn-cancel { flex:1; padding:12px; border-radius:14px; background:rgba(255,255,255,0.15); color:#fff; font-weight:700; font-size:13px; border:1px solid rgba(255,255,255,0.25); cursor:pointer; font-family:inherit; }
+        .rahmat-btn-exit { flex:1; padding:12px; border-radius:14px; background:linear-gradient(135deg,#ef4444,#b91c1c); color:#fff; font-weight:700; font-size:13px; border:none; cursor:pointer; font-family:inherit; box-shadow:0 4px 15px rgba(239,68,68,0.4); }
+    </style>
+    <div id="rahmatExitModal">
+        <div class="rahmat-exit-card">
+            <div class="rahmat-exit-icon">⚡</div>
+            <div class="rahmat-exit-title">ऐप बंद करें?</div>
+            <div class="rahmat-exit-sub">रहमत-ए-इस्लाम फाउंडेशन</div>
+            <div class="rahmat-exit-btns">
+                <button class="rahmat-btn-cancel" onclick="rahmatCloseExitPopup(false)">रहें</button>
+                <button class="rahmat-btn-exit" onclick="rahmatCloseExitPopup(true)">बाहर जाएँ</button>
+            </div>
         </div>
     </div>
-</div>
 </body>
 </html>
